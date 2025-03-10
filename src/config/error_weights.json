@@ -1,0 +1,6 @@
+{
+    "critical": {"time_conflict": 0.6, "safety_violation": 1.0},
+    "high": {"resource_unavailable": 0.4},
+    "medium": {"suboptimal": 0.2},
+    "domain_adj": {"scheduling": {"time_conflict": 1.2}}
+}
