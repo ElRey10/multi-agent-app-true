@@ -20,7 +20,7 @@ skip_clone = True if initial_state else False
 if not initial_state:
     workflow, initial_state = init_workflow(
         repo_url_v1="https://github.com/trimble-oss/modus-web-components.git",
-        repo_url_v2="https://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@github.com/Trimble-Construction/modus-wc-2.0.git",
+        repo_url_v2="https://{token}@github.com/Trimble-Construction/modus-wc-2.0.git",
         target_repo="https://github.com/ChaitanyaKNaidu/GitHub-Issues-Extraction.git",
         skip_repo_clone=False,
     )
