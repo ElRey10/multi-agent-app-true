@@ -1,38 +1,19 @@
-import json
-from typing import Literal
 from fastapi import FastAPI, HTTPException
 from langgraph.graph import StateGraph
 from pydantic import BaseModel
-from nodes import analyze_node, plan_node, verify_node, select_node, nodelessLLM
+from nodes import analyze_node, plan_node, verify_node, select_node
 import uuid
-import os
-import signal
-import fastapi
-from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # For development only
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],
-)
 
 
 # Define the AgentState model
 class AgentState(BaseModel):
     problem: str
-    problem_type: str = "general"
     config: dict = {}
     solutions: list = []
-    error_details: list = []  # Structured errors
-    confidence_score: float = 1.0
+    errors: list = []
     iteration: int = 0
-    error_history: list = []  # Track score trends
-    domain_weights: dict = {}  # Domain-specific multipliers
-    action: Literal["pending", "continue", "escalate", "complete"] = "pending"
 
 
 # Store workflows and their states in memory
@@ -44,26 +25,9 @@ class InitRequest(BaseModel):
     problem: str
 
 
-# def shutdown():
-#     os.kill(os.getpid(), signal.SIGTERM)
-#     return fastapi.Response(status_code=200, content="Server shutting down...")
-
-
-# app.add_api_route("/shutdown", shutdown, methods=["GET"])
-
-
-# Update the /init endpoint
 @app.post("/init")
-async def init_workflow(request: dict):
-    body_dict = json.loads(request["body"])
-    init_request = InitRequest(problem=body_dict["problem"])
-
-    # Initialize the workflow state
-    state = AgentState(
-        problem=init_request.problem,
-        config={"max_iterations": 5},  # Defaults
-    )
-
+async def init_workflow(request: InitRequest):
+    # Define the workflow
     workflow = StateGraph(AgentState)
 
     # Add nodes
@@ -78,18 +42,21 @@ async def init_workflow(request: dict):
     workflow.add_edge("verify", "select")
     workflow.add_conditional_edges(
         "select",
-        lambda state: state.action,
+        lambda state: (
+            "analyze" if state.iteration < 3 else "end"
+        ),  # Use state.iteration (not state["iteration"])
     )
     workflow.set_entry_point("analyze")
 
     # Compile the workflow
     compiled_workflow = workflow.compile()
 
+    # Initialize the workflow state
+    state = AgentState(problem=request.problem)
     workflow_id = str(uuid.uuid4())
     workflows[workflow_id] = compiled_workflow
-    workflow_states[workflow_id] = state
-    print("workflow_id", workflow_id)
-    print("state", state)
+    workflow_states[workflow_id] = state  # Store the AgentState instance
+
     return {"workflow_id": workflow_id, "state": state.dict()}
 
 
@@ -107,14 +74,5 @@ async def step_workflow(workflow_id: str):
 
     # Update the state
     workflow_states[workflow_id] = result
-    print("result", result)
-    return {"workflow_id": workflow_id, "state": result}
 
-
-@app.post("/basic-llm")
-async def basic_llm(prompt: dict):
-    body_dict = json.loads(prompt["body"])
-
-    # Get the value of 'prompt'
-    prompt_value = body_dict["prompt"]
-    return nodelessLLM(prompt_value)
+    return {"workflow_id": workflow_id, "state": result.dict()}

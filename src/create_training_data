@@ -1,0 +1,125 @@
+import json
+import re
+from pathlib import Path
+
+
+def extract_components(input_file: str, output_file: str) -> None:
+    """
+    Extract all valid components from the JSON file and generate training examples
+    for props, events, slots, and documentation.
+    """
+    with open(input_file, "r") as f:
+        data = json.load(f)
+
+    training_examples = []
+
+    def is_valid_component(component: dict) -> bool:
+        """Check if the dictionary represents a valid component."""
+        return isinstance(component, dict) and any(
+            field in component
+            for field in ["props", "events", "slots", "documentation"]
+        )
+
+    def process_component(component_name: str, component: dict):
+        """Process a single component and generate training examples."""
+        if not is_valid_component(component):
+            print(
+                f"Skipping invalid component: {component_name} (no valid props, events, slots, or documentation)"
+            )
+            return
+
+        # Clean the component name (remove .tsx)
+        clean_name = re.sub(r"\.tsx$", "", component_name)
+
+        # Base prompt template
+        prompt_base = f"Component: {clean_name}\n"
+
+        # Process documentation
+        if "documentation" in component and component["documentation"]:
+            training_examples.append(
+                {
+                    "prompt": f"{prompt_base}What is the purpose of this component?",
+                    "completion": component["documentation"],
+                }
+            )
+
+        # Process props
+        for prop in component.get("props", []):
+            if (
+                not isinstance(prop, dict)
+                or "name" not in prop
+                or "comment" not in prop
+            ):
+                print(f"Skipping invalid prop in {component_name}")
+                continue
+
+            training_examples.append(
+                {
+                    "prompt": f"{prompt_base}What is the purpose of the property '{prop['name']}'?",
+                    "completion": prop["comment"],
+                }
+            )
+
+        # Process events
+        for event in component.get("events", []):
+            if (
+                not isinstance(event, dict)
+                or "name" not in event
+                or "comment" not in event
+            ):
+                print(f"Skipping invalid event in {component_name}")
+                continue
+
+            training_examples.append(
+                {
+                    "prompt": f"{prompt_base}What does the event '{event['name']}' represent?",
+                    "completion": event["comment"],
+                }
+            )
+
+        # Process slots
+        for slot in component.get("slots", []):
+            if (
+                not isinstance(slot, dict)
+                or "name" not in slot
+                or "comment" not in slot
+            ):
+                print(f"Skipping invalid slot in {component_name}")
+                continue
+
+            training_examples.append(
+                {
+                    "prompt": f"{prompt_base}How should the slot '{slot['name']}' be used?",
+                    "completion": slot["comment"],
+                }
+            )
+
+    def find_components(obj, context: str = ""):
+        """Recursively search for valid components in nested structures."""
+        if isinstance(obj, dict):
+            # Check if this dictionary is a valid component
+            if is_valid_component(obj):
+                process_component(context or "UnnamedComponent", obj)
+            else:
+                # Recursively search nested dictionaries
+                for key, value in obj.items():
+                    find_components(value, key)
+
+        elif isinstance(obj, list):
+            # Recursively search list items
+            for item in obj:
+                find_components(item, context)
+
+    # Start searching for components
+    find_components(data)
+
+    # Save results to JSONL file
+    with open(output_file, "w") as f:
+        for example in training_examples:
+            f.write(json.dumps(example) + "\n")
+
+    print(f"Generated {len(training_examples)} training examples in {output_file}")
+
+
+# Usage
+extract_components("data/workflow_state.json", "trainingtraining_data.jsonl")
